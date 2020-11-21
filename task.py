@@ -53,11 +53,14 @@ def run(arg):
     elif arg[1] == "list":
         response = getTasks(dns)
         if response != "No response":
-            for obj in response:
-                data = dateutil.parser.parse(obj['pub_date'])
-                print(obj['title'])
-                print("{0}".format(data.strftime('%m/%d/%Y')))
-                print(obj['description'],"\n")
+            if response != []:
+               for obj in response:
+                   data = dateutil.parser.parse(obj['pub_date'])
+                   print(obj['title'])
+                   print("{0}".format(data.strftime('%m/%d/%Y')))
+                   print(obj['description'],"\n")
+            else:
+                print("There are no tasks")
         else:
             print(response)
 
