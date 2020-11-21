@@ -9,28 +9,32 @@ from datetime import datetime
 
 
 def getTasks(dns):
-    response = requests.get(f'http://{dns}:8080/tasks')
-    if response.status_code == 200:
+    try :
+        response = requests.get(f'http://{dns}:8080/tasks')
         return response.json()
-    return "No response"
+    except:
+        return "No response"
 
 def insertTask(dns,title, pub_date, description_list):
+    try:
+    
+        description = ' '.join(description_list)
 
-    description = ' '.join(description_list)
+        datetime_object = datetime.strptime(pub_date, '%d/%m/%Y').isoformat()
 
-    datetime_object = datetime.strptime(pub_date, '%d/%m/%Y').isoformat()
-
-    jsonObj = {
-            "title" : title,
-            "pub_date" : datetime_object,
-            "description" : description
-        }
-    response = requests.post(
-        url= f'http://{dns}:8080/tasks/insert',
-        data= jsonObj)
-    if response.status_code == 201:
-        return "Task created successfully"
-    return "Error, check your arguments"
+        jsonObj = {
+                "title" : title,
+                "pub_date" : datetime_object,
+                "description" : description
+            }
+        response = requests.post(
+            url= f'http://{dns}:8080/tasks/insert',
+            data= jsonObj)
+        if response.status_code == 201:
+            return "Task created successfully"
+        return "Error, check your arguments"
+    except:
+        return "No response"
 
 
 def run(arg):
@@ -48,11 +52,14 @@ def run(arg):
         print("Argument is none.")
     elif arg[1] == "list":
         response = getTasks(dns)
-        for obj in response:
-            data = dateutil.parser.parse(obj['pub_date'])
-            print(obj['title'])
-            print("{0}".format(data.strftime('%m/%d/%Y')))
-            print(obj['description'],"\n")
+        if response != "No response":
+            for obj in response:
+                data = dateutil.parser.parse(obj['pub_date'])
+                print(obj['title'])
+                print("{0}".format(data.strftime('%m/%d/%Y')))
+                print(obj['description'],"\n")
+        else:
+            print(response)
 
 
 

@@ -19,7 +19,7 @@ class Arch:
         return """#!/bin/bash
                 cd /home/ubuntu
                 sudo apt update -y
-                git clone https://github.com/raulikeda/tasks
+                git clone https://github.com/zMendes/tasks
                 sed -i "s/node1/{0}/"  /home/ubuntu/tasks/portfolio/settings.py
                 sed -i "s/cloud/cloud9/" /home/ubuntu/tasks/install.sh
                 cd tasks
@@ -40,11 +40,16 @@ class Arch:
             self.subnets.append(subnet["SubnetId"])
 
     def getInstances(self, ec2):
+        
         response = ec2.describe_instances()
         for reservation in response["Reservations"]:
             for instance in reservation["Instances"]:
                 if (instance["State"]["Name"]) != "terminated" and self.isMine(instance):
                     self.instances.append(instance["InstanceId"])
+
+    def deleteInstance(self, ec2, instanceId):
+        print("\nDeleting instance")
+        response = ec2.terminate_instances(InstanceIds=[instanceId])
 
     def terminateAll(self, ec2):
         # Mata todas as minhas instâncias
@@ -53,7 +58,7 @@ class Arch:
 
     def createSecGroup(self, ec2, name):
         # Cria um SecurityGroup
-        print("Creating security group ", name)
+        print("\nCreating security group ", name)
         try:
             response = ec2.create_security_group(
                 Description='SecurityGroup created by Leo',
@@ -114,6 +119,7 @@ class Arch:
                     ]
                 }]
         )
+        print("Waiting for the instance to initialize")
         for instance in response["Instances"]:
             ids.append(instance["InstanceId"])
         waiter2 = ec2.get_waiter('instance_status_ok')
@@ -145,7 +151,7 @@ class Arch:
 
     def updateSecurityPort(self, ec2, groupName, port):
 
-        print("Setting up security group rules")
+        print("\nOpening {0} port on {1}".format(port, groupName))
 
         response = ec2.authorize_security_group_ingress(
             GroupName=groupName,
@@ -165,6 +171,7 @@ class Arch:
         )
 
     def getImage(self, ec2, name):
+        print("\nGetting Ubuntu 20.04 AMI_ID")
         response = ec2.describe_images(
             Filters=[
                 {
@@ -176,10 +183,12 @@ class Arch:
         return response['Images'][0]['ImageId']
 
     def deleteLoadBalancer(self, name):
+        print("Deleting Load Balancer")
         response = self.lb.delete_load_balancer(LoadBalancerName=name)
 
     def createLoadBalancer(self, name, subnets, lb_port, inst_port, security_group):
 
+        print("Creating {0} Load Balancer".format(name))
         try:
             response = self.lb.create_load_balancer(
                 LoadBalancerName=name,
@@ -198,12 +207,14 @@ class Arch:
                         'Value': OWNER
                     }, ]
             )
+            print("Load Balancer created successfully")
             return response['DNSName']
         except:
             self.deleteLoadBalancer(name)
             self.createLoadBalancer(name, subnets, lb_port, inst_port)
 
     def createAutoScaling(self, name, LoadBalancerName, instanceId, min, max):
+        print("\nCreating {0} Auto Scaling Group".format(name))
         try:
             response = self.auto.create_auto_scaling_group(
                 AutoScalingGroupName=name,
@@ -218,6 +229,7 @@ class Arch:
                     },
                 ]
             )
+            print("Auto Scaling Group created successfully")
         except:
             self.deleteExistingAutos(name)
             self.deleteExistingLCs(name)
@@ -225,6 +237,7 @@ class Arch:
                 name, LoadBalancerName, instanceId, min, max)
 
     def deleteExistingLCs(self, name):
+        print("\nSearching for existing Launch Configurations")
         response = self.auto.describe_launch_configurations(
             LaunchConfigurationNames=[name])
         for launchConfig in response['LaunchConfigurations']:
@@ -232,10 +245,12 @@ class Arch:
                 self.deleteLaunchConfiguration(name)
 
     def deleteLaunchConfiguration(self, name):
+        print("Deleting launch configuration")
         response = self.auto.delete_launch_configuration(
             LaunchConfigurationName=name)
 
     def deleteExistingAutos(self, name):
+        print("\nSearching for existing Auto Scaling Groups")
         response = self.auto.describe_auto_scaling_groups(
             AutoScalingGroupNames=[name])
         for auto in response['AutoScalingGroups']:
@@ -243,6 +258,8 @@ class Arch:
                 self.deleteAutoScaling(name)
 
     def deleteAutoScaling(self, name):
+
+        print("Deleting Auto Scaling Group")
         response = self.auto.delete_auto_scaling_group(
             AutoScalingGroupName=name,
             ForceDelete=True
@@ -253,7 +270,7 @@ class Arch:
     def run(self):
 
         self.getSubnets(self.ec2_east1)
-#
+
         self.deleteExistingAutos(AUTO_SCALING_NAME)
         self.deleteExistingLCs(AUTO_SCALING_NAME)
         self.deleteLoadBalancer(LOAD_BALANCER_NAME)
@@ -282,7 +299,7 @@ class Arch:
 
 
         DEFAULT_IMG = self.getImage(self.ec2_east2 ,DEFAULT_IMG_NAME)
-        instance, postgres_ip = self.createInstance(self.ec2_east2, DEFAULT_IMG, 1, [security_group_postgres], POSTGRES_NAME, POSTGRES_SCRIPT)
+        postgres_instance, postgres_ip = self.createInstance(self.ec2_east2, DEFAULT_IMG, 1, [security_group_postgres], POSTGRES_NAME, POSTGRES_SCRIPT)
         
                 
         security_group_django = self.createSecGroup(self.ec2_east1, SECURITY_GROUP_NAME)
@@ -293,15 +310,23 @@ class Arch:
 
     
         DEFAULT_IMG = self.getImage(self.ec2_east1 ,DEFAULT_IMG_NAME)
-        instances, djangoIP = self.createInstance(self.ec2_east1, DEFAULT_IMG, 1, [security_group_django], "loe", self.getDjangoScript(postgres_ip))
+        django_instance, djangoIP = self.createInstance(self.ec2_east1, DEFAULT_IMG, 1, [security_group_django], "loe", self.getDjangoScript(postgres_ip))
 
         
         DNSlb = self.createLoadBalancer(LOAD_BALANCER_NAME, self.subnets, 8080, 8080, security_group_django)
-        self.createAutoScaling( AUTO_SCALING_NAME, LOAD_BALANCER_NAME, instances[0], 1, 3)
+        self.createAutoScaling( AUTO_SCALING_NAME, LOAD_BALANCER_NAME, django_instance[0], 1, 3)
 
-        print("Acesse por: {0}".format(DNSlb))
+        self.deleteInstance(self.ec2_east1, django_instance[0])
 
-        print(" THE END.")
+
+        with open('dns.txt','w') as file:
+            file.write(DNSlb)
+            file.close()
+
+        print("\nAcesse por: {0}".format(DNSlb))
+        print("THE END.")
+
+        
 
 
 app = Arch()
